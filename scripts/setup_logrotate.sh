@@ -1,76 +1,50 @@
 #!/bin/bash
 set -euo pipefail
+
 LOG="/var/log/setup_logrotate.log"
 exec > >(tee -a "$LOG") 2>&1
 
-[ -f /etc/security_env.conf ] && . /etc/security_env.conf || {
-  echo "[ERRO] /etc/security_env.conf ausente"
-  exit 1
-}
+echo "=============================================="
+echo "[INFO] setup_logrotate: iniciando"
+echo "=============================================="
 
-echo "[INFO] Ajustando journald para limitar uso"
+ENV_FILE="/etc/security_env.conf"
+if [ -f "$ENV_FILE" ]; then
+  . "$ENV_FILE"
+  echo "[INFO] Carregado: $ENV_FILE"
+else
+  echo "[WARN] $ENV_FILE não encontrado — usando valores padrão"
+  JOURNAL_MAX_PERCENT="5%"
+  JOURNAL_MAX_FILE="200M"
+  JOURNAL_MAX_AGE="14day"
+fi
 
-# journald persistente com limites controlados
+# Fallbacks
+JOURNAL_MAX_PERCENT="${JOURNAL_MAX_PERCENT:-5%}"
+JOURNAL_MAX_FILE="${JOURNAL_MAX_FILE:-200M}"
+JOURNAL_MAX_AGE="${JOURNAL_MAX_AGE:-14day}"
+
+echo "[INFO] Configurando journald (limites CIS/Wazuh)"
+
 mkdir -p /etc/systemd/journald.conf.d
-cat >/etc/systemd/journald.conf.d/99-hardening.conf <<EOF
+cat >/etc/systemd/journald.conf.d/10-journal-size.conf <<EOF
 [Journal]
-Storage=persistent
 SystemMaxUse=${JOURNAL_MAX_PERCENT}
 SystemMaxFileSize=${JOURNAL_MAX_FILE}
 MaxRetentionSec=${JOURNAL_MAX_AGE}
-ForwardToSyslog=no
 EOF
 
-systemctl restart systemd-journald
-
-echo "[INFO] Criando regras adicionais de logrotate (idempotente)"
-
-# Exemplo genérico para /var/log/*.log
-cat >/etc/logrotate.d/99-generic-hardening <<'EOF'
-/var/log/*.log {
-    weekly
-    rotate 12
-    size 50M
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0640 root adm
-    sharedscripts
-    postrotate
-        /bin/systemctl kill -s HUP rsyslog.service 2>/dev/null || true
-    endscript
+systemctl restart systemd-journald || {
+  echo "[ERRO] Falha ao reiniciar journald"
+  exit 1
 }
-EOF
 
-# Wazuh agent logs
-cat >/etc/logrotate.d/99-wazuh-agent <<'EOF'
-/var/ossec/logs/ossec.log {
-    daily
-    rotate 14
-    size 50M
-    compress
-    delaycompress
-    missingok
-    notifempty
-    copytruncate
-}
-EOF
+echo "--- Validação ---"
+echo -n "SystemMaxUse: " && grep -q "SystemMaxUse" /etc/systemd/journald.conf.d/10-journal-size.conf && echo "✅"
+echo -n "SystemMaxFileSize: " && grep -q "SystemMaxFileSize" /etc/systemd/journald.conf.d/10-journal-size.conf && echo "✅"
+echo -n "MaxRetentionSec: " && grep -q "MaxRetentionSec" /etc/systemd/journald.conf.d/10-journal-size.conf && echo "✅"
 
-# Zabbix agent logs (se existir)
-if [ -d /var/log/zabbix ]; then
-  cat >/etc/logrotate.d/99-zabbix-agent <<'EOF'
-/var/log/zabbix/*.log {
-    weekly
-    rotate 8
-    size 30M
-    compress
-    delaycompress
-    missingok
-    notifempty
-    copytruncate
-}
-EOF
-fi
-
-echo "[OK] Logrotate/journald configurados"
+echo "=============================================="
+echo "[OK] setup_logrotate concluído com sucesso!"
+echo "Logs disponíveis em: $LOG"
+echo "=============================================="
