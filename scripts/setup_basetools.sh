@@ -46,36 +46,29 @@ set number relativenumber cursorline foldmethod=syntax foldlevel=99
 nnoremap <space> za
 EOF
 
-# ===== Tema Fastfetch PMRO para usuário comum =====
+# ===== Tema Fastfetch para usuário comum =====
 log_step "Configurando Fastfetch"
 mkdir -p "$HOME_USER/.config/fastfetch"
 cat >"$HOME_USER/.config/fastfetch/config.jsonc" <<"EOF"
 {
-  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
-  "logo": {
-    "type": "builtin",
-    "source": "debian",
-    "padding": {
-      "top": 1,
-      "right": 2
-    },
-    "color": "blue"
+  "color": 4,
+  "logo": "auto",
+  "separator": "  ",
+  "keyColor": 2,
+  "valueColor": 3,
+  "padding": {
+    "top": 1,
+    "right": 2
   },
   "modules": [
     "os",
     "kernel",
     "cpu",
-    "gpu",
     "memory",
     "disk",
     "localIP",
     "uptime"
-  ],
-  "display": {
-    "separator": "  ",
-    "keyColor": "green",
-    "valueColor": "yellow"
-  }
+  ]
 }
 EOF
 chown -R "$USUARIO:$USUARIO" "$HOME_USER/.config/fastfetch"
