@@ -1,0 +1,15 @@
+[Unit]
+Description=Pós-instalação: hardening, nftables, logs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/postinstall.sh
+RemainAfterExit=true
+StandardOutput=journal+console
+StandardError=journal+console
+User=root
+
+[Install]
+WantedBy=multi-user.target

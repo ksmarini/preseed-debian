@@ -1,0 +1,14 @@
+[Unit]
+Description=PAM Hardening after password change reboot
+After=multi-user.target network.target
+ConditionPathExists=/var/lib/pam-hardening/password-changed
+ConditionPathExists=!/var/lib/pam-hardening/done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pam_hardening.sh
+ExecStartPost=/bin/sh -c 'touch /var/lib/pam-hardening/done'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
