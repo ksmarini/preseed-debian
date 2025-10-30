@@ -1,64 +1,66 @@
 #!/bin/bash
-# Harden /tmp and /var/tmp using systemd mount units + fstab
+# Harden /tmp and /var/tmp using fstab + remount
 set -euo pipefail
 
 LOG="/var/log/setup_tmpfiles.log"
 exec > >(tee -a "$LOG") 2>&1
 
-echo "[INFO] setup_tmpfiles: iniciando"
+echo "=============================================="
+echo "[INFO] Hardened Temp Filesystem - Iniciando..."
+echo "=============================================="
 
-# 1) Remover entradas antigas do fstab
-sed -i '/[[:space:]]\/tmp[[:space:]]/d' /etc/fstab
-sed -i '/[[:space:]]\/var\/tmp[[:space:]]/d' /etc/fstab
+# -----------------------------------------------------------------
+echo "[INFO] Ajustando /tmp no fstab..."
+# Remove qualquer entrada antiga do fstab sobre /tmp
+sed -i '/\/tmp/d' /etc/fstab
 
-# 2) Escrever fstab desejado (tmpfs endurecido em /tmp + bind /var/tmp)
-cat >>/etc/fstab <<'EOF'
-tmpfs   /tmp      tmpfs  rw,nosuid,nodev,noexec,relatime,mode=1777  0  0
-/tmp    /var/tmp  none   bind                                       0  0
-EOF
-echo "[INFO] fstab atualizado (tmpfs /tmp com noexec; bind /var/tmp)"
+# Adiciona entrada CIS compatível
+echo "tmpfs /tmp tmpfs rw,nosuid,nodev,noexec,mode=1777 0 0" >>/etc/fstab
 
-# 3) Garantir que o systemd NÃO monte /var/tmp como tmpfs
-#    (algumas builds trazem var-tmp.mount que sobrescreve o fstab)
-if systemctl list-unit-files | grep -q '^var-tmp\.mount'; then
-  systemctl mask var-tmp.mount || true
-  echo "[INFO] var-tmp.mount mascarado"
+echo "[INFO] Aplicando noexec /tmp neste boot..."
+umount -R /tmp 2>/dev/null || echo "[WARN] /tmp não estava montado antes."
+mount /tmp || {
+  echo '[ERRO] Falha ao montar /tmp'
+  exit 1
+}
+
+mount | grep /tmp || {
+  echo '[ERRO] /tmp não está montado'
+  exit 1
+}
+
+# -----------------------------------------------------------------
+echo "[INFO] Ajustando /dev/shm..."
+if ! grep -q "/dev/shm" /etc/fstab; then
+  echo "tmpfs /dev/shm tmpfs rw,nosuid,nodev,noexec 0 0" >>/etc/fstab
 fi
+mount -o remount,rw,nosuid,nodev,noexec /dev/shm || echo "[WARN] Remount /dev/shm falhou"
 
-# 4) Forçar unit local de /tmp com as opções corretas (tem precedência sobre vendor)
-mkdir -p /etc/systemd/system
-cat >/etc/systemd/system/tmp.mount <<'EOF'
-[Unit]
-Description=Temporary Directory (/tmp) hardened
-Documentation=man:hier(7) man:tmpfs(5)
-DefaultDependencies=no
-Conflicts=umount.target
-Before=local-fs.target umount.target
+mount | grep /dev/shm || echo "[WARN] /dev/shm não localizado na tabela de montagem"
 
-[Mount]
-What=tmpfs
-Where=/tmp
-Type=tmpfs
-Options=rw,nosuid,nodev,noexec,relatime,mode=1777
+# -----------------------------------------------------------------
+echo "[INFO] Ajustando /var/tmp como bind para /tmp..."
+umount -R /var/tmp 2>/dev/null || echo "[WARN] /var/tmp não estava montado."
+rm -rf /var/tmp 2>/dev/null || true
+mkdir -p /tmp 2>/dev/null || true
+ln -s /tmp /var/tmp
 
-[Install]
-WantedBy=local-fs.target
-EOF
-echo "[INFO] /etc/systemd/system/tmp.mount escrito (noexec,nodev,nosuid)"
+echo "[INFO] /var/tmp agora é symlink para /tmp"
+ls -l /var/tmp
 
-# 5) Aplicar: desmonta qualquer montagem existente, recarrega units e remonta corretamente
-systemctl daemon-reload
+# -----------------------------------------------------------------
+echo "[INFO] Ajustando /home (nosuid,nodev)..."
+sed -i -E '/[[:space:]]\/home[[:space:]]/ s/(defaults|ext4\s+defaults)/&,nosuid,nodev/' /etc/fstab
+mount -o remount,nosuid,nodev /home || echo "[WARN] Remount /home falhou"
+mount | grep /home || echo "[WARN] /home não localizado na tabela de montagem"
 
-# Desmonta montagens antigas (podem existir múltiplas)
-umount -R /var/tmp 2>/dev/null || true
-umount -R /tmp 2>/dev/null || true
-
-# Sobe /tmp via unit (com as opções corretas) e depois aplica fstab (bind /var/tmp)
-systemctl enable --now tmp.mount
-mount -a
-
-echo "[INFO] Montagens atuais:"
-mount | grep -E '/tmp|/var/tmp' || true
-
-echo "[OK] setup_tmpfiles concluído"
+# -----------------------------------------------------------------
+echo "=============================================="
+echo "[OK] Hardened Temp Filesystem concluído!"
+echo "   * /tmp — noexec,nosuid,nodev ✅"
+echo "   * /var/tmp — symlink => /tmp ✅"
+echo "   * /dev/shm — noexec,nosuid,nodev ✅"
+echo "   * /home — nosuid,nodev ✅"
+echo "Logs disponíveis em: $LOG"
+echo "=============================================="
 exit 0
