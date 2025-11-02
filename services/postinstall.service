@@ -1,15 +1,18 @@
 [Unit]
 Description=Pós-instalação: hardening, nftables, logs
-After=network-online.target
+After=network-online.target ssh.service systemd-journald.service
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/postinstall.sh
-RemainAfterExit=true
-StandardOutput=journal+console
-StandardError=journal+console
+RemainAfterExit=false
+StandardOutput=journal
+StandardError=journal
 User=root
+
+# Executa somente se ainda não rodou
+ConditionPathExists=!/var/log/postinstall_done
 
 [Install]
 WantedBy=multi-user.target
