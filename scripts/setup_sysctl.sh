@@ -14,50 +14,57 @@ mkdir -p "$SYSCTL_DIR"
 cat >"$CONF" <<'EOF'
 # ===== Kernel & Network Hardening (CIS) =====
 
-# Proteções IPv4 / ICMP
+# IPv4 ICMP Protections
 net.ipv4.icmp_echo_ignore_broadcasts = 1
 net.ipv4.icmp_ignore_bogus_error_responses = 1
+net.ipv4.icmp_ratelimit = 100
 
-# Anti-Redirect spoof
+# Anti Redirect / Anti Spoof
 net.ipv4.conf.all.accept_redirects = 0
 net.ipv4.conf.default.accept_redirects = 0
 net.ipv6.conf.all.accept_redirects = 0
 net.ipv6.conf.default.accept_redirects = 0
 
-# Nunca enviar redirects
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.conf.default.send_redirects = 0
-
-# Reverse Path Filtering (Anti-spoofing)
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.conf.default.rp_filter = 1
-
-# Secure redirect = off
 net.ipv4.conf.all.secure_redirects = 0
 net.ipv4.conf.default.secure_redirects = 0
 
-# Kernel pointers / debug
+# No Source Routing
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+
+# Reverse Path Filtering
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+
+# Kernel Pointers / Debug
 kernel.kptr_restrict = 2
 kernel.dmesg_restrict = 1
 
 # ASLR
 kernel.randomize_va_space = 2
 
-# Bloqueia ptrace entre usuários
+# ptrace restrictions
 kernel.yama.ptrace_scope = 2
 
-# Desabilita kexec (bloqueia bypasses via reboot)
+# Disable kexec
 kernel.kexec_load_disabled = 1
 
-# Desabilita BPF para não privilegiados
+# Disable unpriv BPF
 kernel.unprivileged_bpf_disabled = 1
 
-# Core dumps restritos
+# Core dumps restricted
 fs.suid_dumpable = 0
+
+# Martian packets logging
+net.ipv4.conf.all.log_martians = 1
+net.ipv4.conf.default.log_martians = 1
+
+# SYN Cookies (Anti-SYN-Flood)
+net.ipv4.tcp_syncookies = 1
 EOF
 
-# Aplica imediatamente
 echo "[INFO] Aplicando sysctl --system"
-sysctl --system
+sysctl --system | sed 's/^/SYSCTL: /'
 
 echo "[OK] setup_sysctl concluído!"
+exit 0
