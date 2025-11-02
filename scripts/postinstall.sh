@@ -60,5 +60,17 @@ echo "[OK] postinstall concluído com sucesso!"
 echo "Logs em: $LOG"
 echo "=============================================="
 
+# Marca execução concluída para não repetir no próximo boot
+echo "[INFO] Criando flag /var/log/postinstall_done"
+touch /var/log/postinstall_done
+
+echo "[INFO] Desabilitando postinstall.service"
 systemctl disable postinstall.service || true
+
+# Garante systemd atualizado
+echo "[INFO] Reload do Daemon e SSH"
+systemctl daemon-reload
+systemctl restart ssh.service || true
+
+echo "[OK] Pós-instalação finalizada corretamente"
 exit 0
