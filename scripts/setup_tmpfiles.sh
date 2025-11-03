@@ -54,6 +54,10 @@ chmod 750 /var/log
 harden_fstab "/var/log/audit" "nosuid,nodev,noexec"
 chmod 750 /var/log/audit
 
+# Protegendo /home (sem noexec)
+harden_fstab "/home" "nosuid,nodev"
+chmod 750 /home
+
 echo -e "\n=============================================="
 echo "[INFO] Verificação Pós-Aplicação"
 echo "=============================================="
@@ -78,6 +82,7 @@ check "/var/tmp" "nosuid,nodev,noexec"
 check "/var" "nosuid,nodev"
 check "/var/log" "nosuid,nodev,noexec"
 check "/var/log/audit" "nosuid,nodev,noexec"
+check "/home" "nosuid,nodev"
 
 echo -e "\n=============================================="
 if [ "$fails" -eq 0 ]; then
