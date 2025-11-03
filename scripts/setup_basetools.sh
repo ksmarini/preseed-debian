@@ -59,8 +59,9 @@ cat >"$HOME_USER/.config/fastfetch/config.jsonc" <<"EOF"
 {
   "logo": "debian",
   "modules": [
-    "os", "kernel", "cpu",
-    "memory", "uptime", "disk",
+    "title", "separator",
+    "os", "host", "kernel", "packages",
+    "cpu", "memory", "uptime", "disk",
     "localip"
   ]
 }
@@ -95,3 +96,4 @@ chmod 0644 /etc/profile.d/pmro_root_ps1.sh
 
 echo "[OK] setup_basetools concluído com sucesso!"
 exit 0
+
