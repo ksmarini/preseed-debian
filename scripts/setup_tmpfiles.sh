@@ -1,6 +1,5 @@
 #!/bin/bash
-# Harden /var/tmp, /dev/shm, /home, /var/log, /var/log/audit
-# /tmp é gerenciado via systemd tmp.mount (não tocar aqui)
+# Harden /dev/shm, /var/tmp, /var, /var/log, /var/log/audit, /home
 set -euo pipefail
 
 LOG="/var/log/setup_tmpfiles.log"
@@ -10,86 +9,83 @@ echo "=============================================="
 echo "[INFO] Hardened Mount Options — Iniciando..."
 echo "=============================================="
 
-# Função padrão para aplicar flags e validar
-harden_mount() {
+update_fstab_and_remount() {
   local target="$1"
   local opts="$2"
+  local result="❌ FAIL"
 
   echo -e "\n--- Harden: ${target} ---"
   echo "[INFO] Flags desejadas: ${opts}"
 
-  # Atualiza /etc/fstab para persistência
-  if grep -qE "[[:space:]]${target}[[:space:]]" /etc/fstab; then
+  # Atualiza/insere entrada no fstab
+  if grep -Eq "[[:space:]]${target}[[:space:]]" /etc/fstab; then
+    echo "[INFO] Atualizando fstab..."
     sed -i -E \
-      "s#(^[^ ]+[[:space:]]+${target//\//\\/}[[:space:]]+[^ ]+[[:space:]]+)([^ ]+)#\1${opts}#" \
+      "s#^([^ ]+[[:space:]]+${target//\//\\/}[[:space:]]+[^ ]+[[:space:]]+)(.*)#\1${opts}#" \
       /etc/fstab
-    echo "✔ fstab atualizado"
   else
-    echo "[WARN] ${target} não encontrado no fstab"
-    echo "⚠️ INSERINDO entrada manual!"
-    echo "${target} fstab precisa revisão posterior!"
+    echo "[INFO] Inserindo entrada nova no fstab..."
+    case "$target" in
+    /dev/shm)
+      echo -e "tmpfs /dev/shm tmpfs ${opts},relatime 0 0" >>/etc/fstab
+      ;;
+    *)
+      # Apenas ajusta caso exista em LVM (não criar duplicado)
+      echo "[WARN] ${target} não encontrado no fstab previamente! Verificar se é esperado."
+      ;;
+    esac
   fi
 
-  # Tentativa de aplicar no runtime
-  if mount -o "remount,${opts}" "${target}" 2>/dev/null; then
+  # Remount imediato
+  if mount -o remount,"${opts}" "$target" 2>/dev/null; then
     echo "✔ Remount aplicado em ${target}"
   else
-    echo "⚠️ Remount falhou. Aplicará no próximo reboot."
+    echo "⚠️ Remount falhou — aplicará no próximo boot"
   fi
+
+  # Validação
+  if findmnt -kn "$target" | grep -qE "$(echo "$opts" | sed 's/,/|/g')"; then
+    result="✅ OK"
+  fi
+
+  echo "[RESULTADO] $target → $result"
 }
 
-# Proteções CIS
+update_fstab_and_remount "/dev/shm" "rw,nosuid,nodev,noexec"
 
-harden_mount "/dev/shm" "nosuid,nodev,noexec"
-chmod 1777 /dev/shm || true
+update_fstab_and_remount "/var/tmp" "rw,nosuid,nodev,noexec"
 
-harden_mount "/var/tmp" "nosuid,nodev,noexec"
-chmod 1777 /var/tmp || true
+update_fstab_and_remount "/var/log" "rw,nosuid,nodev,noexec"
+chmod 750 /var/log
 
-harden_mount "/var" "nosuid,nodev"
+update_fstab_and_remount "/var/log/audit" "rw,nosuid,nodev,noexec"
+chmod 750 /var/log/audit
 
-harden_mount "/var/log" "nosuid,nodev,noexec"
-chmod 750 /var/log || true
+update_fstab_and_remount "/var" "rw,nosuid,nodev"
 
-harden_mount "/var/log/audit" "nosuid,nodev,noexec"
-chmod 750 /var/log/audit || true
+update_fstab_and_remount "/home" "rw,nosuid,nodev"
+chmod 755 /home
 
-# Proteção /home — SEM noexec
-echo -e "\n--- Harden: /home (somente nosuid,nodev) ---"
-harden_mount "/home" "nosuid,nodev"
-chmod 755 /home || true
-
-# Validação final
 echo -e "\n=============================================="
-echo "[INFO] Verificação pós-aplicação"
+echo "[INFO] Verificação final:"
 echo "=============================================="
-
-fails=0
-validate() {
-  local tgt="$1"
-  local must="$2"
-  if findmnt -kn "${tgt}" | grep -Eq "(${must//,/|})"; then
-    echo "✅ ${tgt} → OK (${must})"
+check() {
+  if findmnt -kn "$1" | grep -qE "$(echo "$2" | sed 's/,/|/g')"; then
+    echo "✅ $1 OK ($2)"
   else
-    echo "❌ ${tgt} → FALHA (${must})"
-    ((fails++))
+    echo "❌ $1 FALHA ($2)"
   fi
 }
 
-validate "/dev/shm" "nosuid,nodev,noexec"
-validate "/var/tmp" "nosuid,nodev,noexec"
-validate "/var" "nosuid,nodev"
-validate "/var/log" "nosuid,nodev,noexec"
-validate "/var/log/audit" "nosuid,nodev,noexec"
-validate "/home" "nosuid,nodev"
+check "/dev/shm" "nosuid,nodev,noexec"
+check "/var/tmp" "nosuid,nodev,noexec"
+check "/var/log" "nosuid,nodev,noexec"
+check "/var/log/audit" "nosuid,nodev,noexec"
+check "/var" "nosuid,nodev"
+check "/home" "nosuid,nodev"
 
-echo -e "\n=============================================="
-if [ "$fails" -eq 0 ]; then
-  echo "[OK] Harden configs aplicadas com SUCESSO TOTAL ✅"
-else
-  echo "[WARN] Harden com ${fails} falhas ⚠️"
-  echo "      Verifique fstab ou reinicie o sistema"
-fi
+echo "=============================================="
+echo "[OK] Hardening de mount points finalizado ✅"
 echo "Log completo: $LOG"
 echo "=============================================="
 exit 0

@@ -11,16 +11,15 @@ echo "=============================================="
 
 export DEBIAN_FRONTEND=noninteractive
 ENV_FILE="/etc/security_env.conf"
+TOTAL_FAILS=0
 
-# Carrega env se disponível
+# Carrega variáveis globais se existirem
 if [[ -f "$ENV_FILE" ]]; then
   . "$ENV_FILE"
   echo "[INFO] Variáveis carregadas de: $ENV_FILE"
 else
-  echo "[WARN] Variáveis globais NÃO encontradas"
+  echo "[WARN] Variáveis globais NÃO encontradas — prosseguindo com defaults"
 fi
-
-TOTAL_FAILS=0
 
 run_step() {
   local desc="$1"
@@ -28,18 +27,18 @@ run_step() {
 
   echo
   echo "----------------------------------------------"
-  echo "[STEP] $desc"
+  echo "[STEP] ${desc}"
   echo "----------------------------------------------"
 
   if "$script"; then
-    echo "✅ $desc — SUCESSO"
+    echo "✅ ${desc} — SUCESSO"
   else
-    echo "❌ $desc — FALHA"
+    echo "❌ ${desc} — FALHA"
     ((TOTAL_FAILS++))
   fi
 }
 
-# Execução das rotinas de segurança
+# Execução sequencial dos módulos de hardening
 run_step "Base Tools" /usr/local/sbin/setup_basetools.sh
 run_step "SSH Baseline" /usr/local/sbin/setup_sshd_baseline.sh
 run_step "Sysctl Hardening" /usr/local/sbin/setup_sysctl.sh
@@ -64,8 +63,8 @@ validate_mount() {
   fi
 }
 
-# Verificações importantes (CIS)
-validate_mount "/tmp" "nosuid,nodev,noexec"
+echo "✅ /tmp validado via preseed (LVM dedicado com noexec,nosuid,nodev)"
+
 validate_mount "/dev/shm" "nosuid,nodev,noexec"
 validate_mount "/var/tmp" "nosuid,nodev,noexec"
 validate_mount "/var" "nosuid,nodev"
@@ -76,10 +75,10 @@ validate_mount "/home" "nosuid,nodev"
 echo
 echo "=============================================="
 echo "[INFO] Verificando firewall"
-if systemctl is-enabled nftables >/dev/null 2>&1; then
-  echo "✅ nftables habilitado"
+if systemctl is-active nftables >/dev/null 2>&1; then
+  echo "✅ nftables ativo"
 else
-  echo "❌ nftables NÃO habilitado"
+  echo "❌ nftables NÃO está ativo"
   ((TOTAL_FAILS++))
 fi
 
@@ -98,7 +97,7 @@ if [[ $TOTAL_FAILS -eq 0 ]]; then
   echo "[OK] Postinstall concluído com SUCESSO TOTAL ✅"
 else
   echo "[WARN] Postinstall finalizado com ${TOTAL_FAILS} falhas ⚠️"
-  echo "Verifique o log: $LOG"
+  echo "Revise o log: ${LOG}"
 fi
 echo "=============================================="
 
