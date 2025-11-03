@@ -38,24 +38,31 @@ harden_fstab() {
   echo "[RESULTADO] ${target}: ${result}"
 }
 
+# Protegendo /tmp e /dev/shm
 harden_fstab "/tmp" "nosuid,nodev,noexec,mode=1777"
 chmod 1777 /tmp
 
+# Protegendo /dev/shm com noexec
 harden_fstab "/dev/shm" "nosuid,nodev,noexec"
 
+# Protegendo /var/tmp
 harden_fstab "/var/tmp" "nosuid,nodev,noexec"
 chmod 1777 /var/tmp
 
-harden_fstab "/home" "nosuid,nodev"
-chmod 750 /home
-
+# Protegendo /var (sem noexec)
 harden_fstab "/var" "nosuid,nodev"
 
+# Protegendo /var/log (com noexec)
 harden_fstab "/var/log" "nosuid,nodev,noexec"
 chmod 750 /var/log
 
+# Protegendo /var/log/audit (com noexec)
 harden_fstab "/var/log/audit" "nosuid,nodev,noexec"
 chmod 750 /var/log/audit
+
+# Protegendo /home (sem noexec e com permissão 755)
+harden_fstab "/home" "nosuid,nodev"
+chmod 755 /home
 
 echo -e "\n=============================================="
 echo "[INFO] Verificação Pós-Aplicação"
