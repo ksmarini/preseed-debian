@@ -46,6 +46,9 @@ harden_fstab "/dev/shm" "nosuid,nodev,noexec"
 harden_fstab "/var/tmp" "nosuid,nodev,noexec"
 chmod 1777 /var/tmp
 
+harden_fstab "/home" "nosuid,nodev"
+chmod 750 /home
+
 harden_fstab "/var" "nosuid,nodev"
 
 harden_fstab "/var/log" "nosuid,nodev,noexec"
@@ -53,9 +56,6 @@ chmod 750 /var/log
 
 harden_fstab "/var/log/audit" "nosuid,nodev,noexec"
 chmod 750 /var/log/audit
-
-harden_fstab "/home" "nosuid,nodev"
-chmod 750 /home
 
 echo -e "\n=============================================="
 echo "[INFO] Verificação Pós-Aplicação"
