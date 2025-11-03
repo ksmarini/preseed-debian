@@ -11,7 +11,7 @@ ensure_tmpfs() {
   local path="$1" opts="$2"
   umount -R "$path" 2>/dev/null || true
   sed -i "\|[[:space:]]$path[[:space:]]|d" "$FSTAB"
-  echo "tmpfs $path tmpfs $opts 0 0" >> "$FSTAB"
+  echo "tmpfs $path tmpfs $opts 0 0" >>"$FSTAB"
   mkdir -p "$path"
   mount "$path"
 }
@@ -32,7 +32,7 @@ harden_disk_mount() {
         next
       }
       {print}
-    ' OFS=" " "$FSTAB" > "${FSTAB}.tmp" && mv "${FSTAB}.tmp" "$FSTAB"
+    ' OFS=" " "$FSTAB" >"${FSTAB}.tmp" && mv "${FSTAB}.tmp" "$FSTAB"
     mount -o remount,"$addopts" "$path" || true
   else
     echo "[WARN] $path não encontrado no fstab; mantendo como está."
@@ -43,7 +43,8 @@ harden_disk_mount() {
 ensure_tmpfs "/tmp" "rw,nosuid,nodev,noexec,mode=1777"
 
 # /var/tmp -> **disco**, apenas endurece flags
-harden_disk_mount "/var/tmp" "nosuid,nodev,noexec,mode=1777"
+harden_disk_mount "/var/tmp" "nosuid,nodev,noexec"
+chmod 1777 /var/tmp
 
 # /dev/shm -> tmpfs
 ensure_tmpfs "/dev/shm" "rw,nosuid,nodev,noexec,mode=1777"
@@ -54,3 +55,4 @@ if grep -qE "[[:space:]]/home[[:space:]]" "$FSTAB"; then
 fi
 
 echo "[OK] Harden mounts concluído."
+

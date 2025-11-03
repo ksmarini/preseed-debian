@@ -11,7 +11,6 @@ StandardOutput=journal
 StandardError=journal
 User=root
 
-# Executa somente se ainda não rodou
 ConditionPathExists=!/var/log/postinstall_done
 
 [Install]
