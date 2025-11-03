@@ -54,7 +54,6 @@ chmod 750 /var/log
 harden_fstab "/var/log/audit" "nosuid,nodev,noexec"
 chmod 750 /var/log/audit
 
-# Protegendo /home (sem noexec)
 harden_fstab "/home" "nosuid,nodev"
 chmod 750 /home
 
