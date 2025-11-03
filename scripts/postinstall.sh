@@ -55,6 +55,11 @@ echo "[6/6] Firewall (nftables)"
 echo "[OK] Firewall ativado"
 echo "----------------------------------------------"
 
+echo "[7/7] Otimizando boot (GRUB silencioso & stealth mode)"
+/usr/local/sbin/setup_grub_silent.sh
+echo "[OK] Boot stealth aplicado"
+echo "----------------------------------------------"
+
 echo "=============================================="
 echo "[OK] postinstall concluído com sucesso!"
 echo "Logs em: $LOG"
@@ -74,3 +79,4 @@ systemctl restart ssh.service || true
 
 echo "[OK] Pós-instalação finalizada corretamente"
 exit 0
+
