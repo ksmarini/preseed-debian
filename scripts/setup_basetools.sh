@@ -71,15 +71,45 @@ chown -R "$USUARIO:$USUARIO" "$HOME_USER/.config/fastfetch"
 # ======================
 log_step "Aliases globais para todos os usuários"
 cat >/etc/profile.d/aliases_pmro.sh <<"EOF"
-alias ls='eza --icons=always'
-alias ll='eza -lh --git --icons=always'
-alias la='eza -a --icons=always'
-alias tail='grc tail'
-alias ping='grc ping'
-alias ps='grc ps'
-alias dig='grc dig'
-alias ss='grc ss'
-alias journalctl='grc journalctl'
+# =============================================================================
+# EZA + ALIASES (apenas shell interativa)
+# =============================================================================
+case $- in
+  *i*)
+    export EZA_BASE_OPTS="--group-directories-first --header --time-style=relative"
+    ICON_STYLE="--icons=always"
+
+    alias ls="eza $ICON_STYLE $EZA_BASE_OPTS"
+    alias ll="eza -lh --git $ICON_STYLE $EZA_BASE_OPTS"
+    alias la="eza -a $ICON_STYLE $EZA_BASE_OPTS"
+    alias lla="eza -lha --git $ICON_STYLE $EZA_BASE_OPTS"
+    alias lt="eza -l --sort=modified --reverse $ICON_STYLE $EZA_BASE_OPTS"
+    alias lS="eza -lS --reverse $ICON_STYLE $EZA_BASE_OPTS"
+    alias ltree="eza -T $ICON_STYLE $EZA_BASE_OPTS"
+    alias ltree3="eza -T --level=3 $ICON_STYLE $EZA_BASE_OPTS"
+    alias lsd="eza -lD $ICON_STYLE $EZA_BASE_OPTS"
+    alias lsr="eza -R $ICON_STYLE $EZA_BASE_OPTS"
+
+    readonly EZA_IGNORE_PATTERN="node_modules|dist|build|target|__pycache__|*.log|*.lock"
+    alias lsi="eza $ICON_STYLE -I '$EZA_IGNORE_PATTERN'"
+    alias lli="eza -lh --git $ICON_STYLE -I '$EZA_IGNORE_PATTERN'"
+    alias lsg='eza -lh --git-status=modified $ICON_STYLE'
+
+    alias ip='ip -c'
+
+    alias cat='batcat'
+    alias bat='batcat'
+    alias fd='fdfind'
+
+    alias journalctl='grc journalctl'
+    alias tail='grc tail'
+    alias ping='grc ping'
+    alias ps='grc ps'
+    alias dig='grc dig'
+    alias nmap='grc nmap'
+    alias ss='grc ss'
+  ;;
+esac
 EOF
 chmod 0644 /etc/profile.d/aliases_pmro.sh
 
@@ -96,4 +126,3 @@ chmod 0644 /etc/profile.d/pmro_root_ps1.sh
 
 echo "[OK] setup_basetools concluído com sucesso!"
 exit 0
-
