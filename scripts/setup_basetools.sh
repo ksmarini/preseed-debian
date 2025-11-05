@@ -4,96 +4,129 @@ set -euo pipefail
 LOG="/var/log/setup_basetools.log"
 exec > >(tee -a "$LOG") 2>&1
 
-echo "[INFO] setup_basetools: iniciado"
+echo "=============================================="
+echo "[INFO] setup_basetools: iniciando"
+echo "=============================================="
 
-# Detecta automaticamente o usuário comum
-USUARIO="$(awk -F: '$3>=1000 && $1!~/^(nobody|systemd-|_)/ {print $1; exit}' /etc/passwd)"
+export DEBIAN_FRONTEND=noninteractive
 
-if [ -z "$USUARIO" ]; then
-  echo "[ERRO] Nenhum usuário comum detectado!"
-  exit 1
-fi
+# -------------------------------
+# 1) Detectar o usuário padrão (sem debconf)
+# -------------------------------
+detect_user() {
+  local u
+  u="$(awk -F: '$3>=1000 && $1!="nobody"{print $1;exit}' /etc/passwd || true)"
 
-HOME_USER="$(getent passwd "$USUARIO" | cut -d: -f6)"
+  # Garantia absoluta
+  [[ -z "$u" ]] && u="root"
 
-echo "[INFO] Usuário comum detectado: $USUARIO (home: $HOME_USER)"
-mkdir -p "$HOME_USER"
-chown "$USUARIO:$USUARIO" "$HOME_USER"
+  echo "$u"
+}
 
-log_step() { echo -e "\n--- $1 ---"; }
+DEFAULT_USER="$(detect_user)"
+USER_HOME="$(getent passwd "$DEFAULT_USER" | cut -d: -f6)"
 
-# ======================
-log_step "Instalando utilitários essenciais"
-DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-  fastfetch tmux grc bat eza ripgrep silversearcher-ag fd-find >/dev/null
+echo "[INFO] Usuário detectado: $DEFAULT_USER ($USER_HOME)"
 
-command -v batcat >/dev/null && ln -sf /usr/bin/batcat /usr/local/bin/bat
-command -v fdfind >/dev/null && ln -sf /usr/bin/fdfind /usr/local/bin/fd
+# -------------------------------
+# 2) Pacotes essenciais
+# -------------------------------
+apt-get update -qq
+apt-get install -y \
+  bash-completion \
+  vim \
+  eza \
+  atop btop bmon iotop \
+  bat fzf grc \
+  sysstat hwinfo ncdu \
+  jq unzip \
+  curl wget ca-certificates \
+  iproute2 net-tools lsof \
+  fastfetch
 
-# ======================
-log_step "Fastfetch apenas para usuários comuns"
-cat >/etc/profile.d/fastfetch.sh <<'EOF'
-case $- in
-  *i*)
-    if [ "$EUID" -ne 0 ] && command -v fastfetch >/dev/null; then
-      fastfetch
-    fi
-  ;;
-esac
-EOF
-chmod 0644 /etc/profile.d/fastfetch.sh
-
-# ======================
-log_step "Configurando Vim globalmente"
-cat >/etc/vim/vimrc.local <<"EOF"
+# -------------------------------
+# 3) Vim — sistema + usuário
+# -------------------------------
+get_vimrc_content() {
+  cat <<'EOF'
 syntax on
-set background=dark
-set number relativenumber cursorline foldmethod=syntax foldlevel=99
+set encoding=utf8 showmatch
+set tabstop=4 shiftwidth=4 softtabstop=4
+set autoindent smartindent smarttab expandtab
+set number relativenumber cursorline history=5000
+set foldmethod=syntax foldlevel=99
 nnoremap <space> za
 EOF
-
-# ======================
-log_step "Config fastfetch do usuário"
-mkdir -p "$HOME_USER/.config/fastfetch"
-cat >"$HOME_USER/.config/fastfetch/config.jsonc" <<"EOF"
-{
-  "logo": "debian",
-  "modules": [
-    "title", "separator",
-    "os", "host", "kernel", "packages",
-    "cpu", "memory", "uptime", "disk",
-    "localip"
-  ]
 }
-EOF
-chown -R "$USUARIO:$USUARIO" "$HOME_USER/.config/fastfetch"
 
-# ======================
-log_step "Aliases globais para todos os usuários"
-cat >/etc/profile.d/aliases_pmro.sh <<"EOF"
-alias ls='eza --icons=always'
-alias ll='eza -lh --git --icons=always'
-alias la='eza -a --icons=always'
-alias tail='grc tail'
-alias ping='grc ping'
-alias ps='grc ps'
-alias dig='grc dig'
-alias ss='grc ss'
-alias journalctl='grc journalctl'
-EOF
-chmod 0644 /etc/profile.d/aliases_pmro.sh
+mkdir -p /etc/vim
+get_vimrc_content >/etc/vim/vimrc.local
 
-# ======================
-log_step "PS1 root com detecção de cor (sem fastfetch)"
-cat >/etc/profile.d/pmro_root_ps1.sh <<"EOF"
-if [ "$EUID" -eq 0 ]; then
-  RED="\[\e[1;31m\]"
-  NC="\[\e[0m\]"
-  PS1="${RED}┌─[\u@\h]─[\w]\n└─> # ${NC}"
+mkdir -p "$USER_HOME/.vim/tmp" "$USER_HOME/.vim/undo"
+get_vimrc_content >"$USER_HOME/.vimrc"
+chown -R "$DEFAULT_USER:$DEFAULT_USER" "$USER_HOME/.vim" "$USER_HOME/.vimrc"
+
+# -------------------------------
+# 4) Bash — somente shell interativa
+# -------------------------------
+BASHRC_GLOBAL="/etc/bash.bashrc"
+BLOCK_TAG="# ==== INTERACTIVE BLOCK ===="
+
+if ! grep -q "$BLOCK_TAG" "$BASHRC_GLOBAL" 2>/dev/null; then
+  cat >>"$BASHRC_GLOBAL" <<EOF
+
+$BLOCK_TAG
+case \$- in
+  *i*)
+    export EZA_BASE_OPTS="--group-directories-first --header --time-style=relative"
+    ICON_STYLE="--icons=always"
+
+    alias ls="eza \$ICON_STYLE \$EZA_BASE_OPTS"
+    alias ll="eza -lh --git \$ICON_STYLE \$EZA_BASE_OPTS"
+    alias la="eza -a \$ICON_STYLE \$EZA_BASE_OPTS"
+    alias lt="eza -l --sort=modified --reverse \$ICON_STYLE \$EZA_BASE_OPTS"
+    alias lS="eza -lS --reverse \$ICON_STYLE \$EZA_BASE_OPTS"
+    alias ltree="eza -T \$ICON_STYLE \$EZA_BASE_OPTS"
+
+    alias grep='grep --color=auto'
+    alias diff='diff --color=auto'
+    alias ip='ip -c'
+
+    command -v batcat >/dev/null && alias cat='batcat'
+    command -v fdfind >/dev/null && alias fd='fdfind'
+
+    if command -v grc >/dev/null 2>&1; then
+      alias journalctl='grc journalctl'
+      alias tail='grc tail'
+      alias head='grc head'
+      alias ping='grc ping'
+      alias ps='grc ps'
+      alias dig='grc dig'
+      alias ss='grc ss'
+    fi
+
+    PS1='\\u@\\h:\\w\\$ '
+    export PS1
+  ;;
+esac
+# ==== INTERACTIVE BLOCK (END) ====
+EOF
+fi
+
+# -------------------------------
+# 5) Fastfetch (login interativo)
+# -------------------------------
+if [[ ! -f "$USER_HOME/.bash_profile" ]] || ! grep -q "fastfetch" "$USER_HOME/.bash_profile"; then
+  cat >>"$USER_HOME/.bash_profile" <<'EOF'
+if [[ $- == *i* ]]; then
+  command -v fastfetch >/dev/null 2>&1 && fastfetch
 fi
 EOF
-chmod 0644 /etc/profile.d/pmro_root_ps1.sh
+  chown "$DEFAULT_USER:$DEFAULT_USER" "$USER_HOME/.bash_profile"
+fi
 
-echo "[OK] setup_basetools concluído com sucesso!"
+echo "=============================================="
+echo "[OK] setup_basetools concluído com SUCESSO ✅"
+echo "Logs: $LOG"
+echo "=============================================="
 exit 0
-

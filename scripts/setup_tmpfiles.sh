@@ -21,38 +21,27 @@ update_fstab_and_remount() {
   if grep -Eq "[[:space:]]${target}[[:space:]]" /etc/fstab; then
     echo "[INFO] Atualizando fstab..."
     sed -i -E \
-      "s#^([^ ]+[[:space:]]+${target//\//\\/}[[:space:]]+[^ ]+[[:space:]]+)(.*)#\1${opts}#" \
+      "s#^([^ ]+[[:space:]]+${target//\//\\/}[[:space:]]+[^ ]+[[:space:]]+)([^ ]+).*#\1${opts}#" \
       /etc/fstab
   else
-    echo "[INFO] Inserindo entrada nova no fstab..."
-    case "$target" in
-    /dev/shm)
-      echo -e "tmpfs /dev/shm tmpfs ${opts},relatime 0 0" >>/etc/fstab
-      ;;
-    *)
-      # Apenas ajusta caso exista em LVM (não criar duplicado)
-      echo "[WARN] ${target} não encontrado no fstab previamente! Verificar se é esperado."
-      ;;
-    esac
+    echo "[WARN] ${target} não encontrado no fstab — Correção manual pode ser necessária"
   fi
 
-  # Remount imediato
+  echo "[INFO] Tentando remount..."
   if mount -o remount,"${opts}" "$target" 2>/dev/null; then
     echo "✔ Remount aplicado em ${target}"
   else
-    echo "⚠️ Remount falhou — aplicará no próximo boot"
+    echo "⚠️ Remount falhou — será aplicado no próximo boot"
   fi
 
-  # Validação
   if findmnt -kn "$target" | grep -qE "$(echo "$opts" | sed 's/,/|/g')"; then
     result="✅ OK"
   fi
 
-  echo "[RESULTADO] $target → $result"
+  echo "[RESULTADO] $result — $target"
 }
 
 update_fstab_and_remount "/dev/shm" "rw,nosuid,nodev,noexec"
-
 update_fstab_and_remount "/var/tmp" "rw,nosuid,nodev,noexec"
 
 update_fstab_and_remount "/var/log" "rw,nosuid,nodev,noexec"
@@ -62,7 +51,6 @@ update_fstab_and_remount "/var/log/audit" "rw,nosuid,nodev,noexec"
 chmod 750 /var/log/audit
 
 update_fstab_and_remount "/var" "rw,nosuid,nodev"
-
 update_fstab_and_remount "/home" "rw,nosuid,nodev"
 chmod 755 /home
 
@@ -85,7 +73,7 @@ check "/var" "nosuid,nodev"
 check "/home" "nosuid,nodev"
 
 echo "=============================================="
-echo "[OK] Hardening de mount points finalizado ✅"
+echo "[OK] Hardening de mounts finalizado ✅"
 echo "Log completo: $LOG"
 echo "=============================================="
 exit 0

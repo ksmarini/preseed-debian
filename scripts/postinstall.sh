@@ -30,21 +30,27 @@ run_step() {
   echo "[STEP] ${desc}"
   echo "----------------------------------------------"
 
-  if "$script"; then
-    echo "✅ ${desc} — SUCESSO"
+  if [[ -x "$script" ]]; then
+    if "$script"; then
+      echo "✅ ${desc} — SUCESSO"
+    else
+      echo "❌ ${desc} — FALHA"
+      ((TOTAL_FAILS++))
+    fi
   else
-    echo "❌ ${desc} — FALHA"
+    echo "⚠️ Script não encontrado ou sem permissão de execução: $script"
     ((TOTAL_FAILS++))
   fi
 }
 
-# Execução sequencial dos módulos de hardening
-run_step "Base Tools" /usr/local/sbin/setup_basetools.sh
-run_step "SSH Baseline" /usr/local/sbin/setup_sshd_baseline.sh
-run_step "Sysctl Hardening" /usr/local/sbin/setup_sysctl.sh
-run_step "Temp & Log Hardening" /usr/local/sbin/setup_tmpfiles.sh
-run_step "Firewall (nftables)" /usr/local/sbin/setup_nft.sh
-run_step "Boot silencioso (GRUB)" /usr/local/sbin/setup_grub_silent.sh
+# Ordem sequencial de hardening
+run_step "Ferramentas base" /usr/local/sbin/setup_basetools.sh
+run_step "Configuração SSH baseline" /usr/local/sbin/setup_sshd_baseline.sh
+run_step "Hardening de sysctl" /usr/local/sbin/setup_sysctl.sh
+run_step "Hardening de mounts" /usr/local/sbin/setup_tmpfiles.sh
+run_step "Configuração Firewall" /usr/local/sbin/setup_nft.sh
+run_step "Configuração do Journald" /usr/local/sbin/setup_journald.sh
+run_step "Configuração GRUB" /usr/local/sbin/setup_grub_silent.sh
 
 echo
 echo "=============================================="
@@ -63,33 +69,32 @@ validate_mount() {
   fi
 }
 
-echo "✅ /tmp validado via preseed (LVM dedicado com noexec,nosuid,nodev)"
+echo "✅ /tmp validado via tmp.mount (systemd)"
 
 validate_mount "/dev/shm" "nosuid,nodev,noexec"
 validate_mount "/var/tmp" "nosuid,nodev,noexec"
 validate_mount "/var" "nosuid,nodev"
-validate_mount "/var/log" "nosuid,nodev,noexec"
-validate_mount "/var/log/audit" "nosuid,nodev,noexec"
+validate_mount "/var/log" "nosuid,nodev"
+validate_mount "/var/log/audit" "nosuid,nodev"
 validate_mount "/home" "nosuid,nodev"
 
 echo
 echo "=============================================="
-echo "[INFO] Verificando firewall"
-if systemctl is-active nftables >/dev/null 2>&1; then
-  echo "✅ nftables ativo"
-else
-  echo "❌ nftables NÃO está ativo"
-  ((TOTAL_FAILS++))
-fi
+echo "[INFO] Verificando serviços"
+echo "=============================================="
 
-echo
-echo "[INFO] Verificando SSH ativo"
-if systemctl is-active ssh >/dev/null 2>&1; then
-  echo "✅ SSH ativo"
-else
-  echo "❌ SSH NÃO está ativo"
-  ((TOTAL_FAILS++))
-fi
+check_service() {
+  local svc="$1"
+  if systemctl is-active "$svc" >/dev/null 2>&1; then
+    echo "✅ $svc ativo"
+  else
+    echo "❌ $svc NÃO está ativo"
+    ((TOTAL_FAILS++))
+  fi
+}
+
+check_service nftables
+check_service ssh
 
 echo
 echo "=============================================="
@@ -101,10 +106,11 @@ else
 fi
 echo "=============================================="
 
-# Remove execução automática futura
+# Marca execução concluída e remove autoexec
+touch /var/log/postinstall_done
 systemctl disable postinstall.service || true
-echo "[INFO] Serviço postinstall.service desabilitado"
 
+echo
 echo "=============================================="
 echo "[INFO] Fim do postinstall ($(date))"
 echo "=============================================="

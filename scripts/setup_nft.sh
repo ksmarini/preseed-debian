@@ -4,30 +4,38 @@ set -euo pipefail
 LOG="/var/log/setup_nft.log"
 exec > >(tee -a "$LOG") 2>&1
 
-echo "[INFO] setup_nft: iniciado"
+echo -e "\n=============== setup_nft.sh ==============="
+echo "[INFO] Início - $(date)"
 
-# Carrega variáveis de segurança
-if [ -f /etc/security_env.conf ]; then
+# ===== Variáveis de segurança =====
+if [[ -f /etc/security_env.conf ]]; then
+  echo "[INFO] Carregando variáveis de segurança..."
+  # shellcheck disable=SC1091
   source /etc/security_env.conf
+  echo "[INFO] Variáveis carregadas com sucesso."
 else
   echo "[ERRO] /etc/security_env.conf não encontrado!"
   exit 1
 fi
 
-# ===== Funções =====
+# ===== Validação =====
 check_var() {
   local var_name="$1"
-  if [ -z "${!var_name:-}" ]; then
+  if [[ -z "${!var_name:-}" ]]; then
     echo "[ERRO] Variável não definida: $var_name"
     exit 2
   fi
+  echo "[INFO] OK: $var_name=${!var_name}"
 }
 
 check_var "ADMIN_WORKSTATION_IPS"
 check_var "VPN_NETS"
 check_var "ZABBIX_SERVER_IPS"
+check_var "WAZUH_MANAGER_IP"
 
-# Converte CSV para lista nft
+# ===== Conversão para formato nft =====
+echo "[INFO] Convertendo listas para nftables..."
+
 listify() {
   echo "$1" | sed 's/ *, */,/g'
 }
@@ -36,6 +44,12 @@ ADMIN_SET=$(listify "$ADMIN_WORKSTATION_IPS")
 VPN_SET=$(listify "$VPN_NETS")
 ZBX_SET=$(listify "$ZABBIX_SERVER_IPS")
 
+echo "[DEBUG] ADMIN_SET = ${ADMIN_SET}"
+echo "[DEBUG] VPN_SET = ${VPN_SET}"
+echo "[DEBUG] ZBX_SET = ${ZBX_SET}"
+
+# ===== Geração do arquivo nft =====
+echo "[INFO] Criando /etc/nftables.conf ..."
 cat >/etc/nftables.conf <<EOF
 flush ruleset
 
@@ -74,19 +88,17 @@ table inet filter {
     iif "lo" accept
     ct state established,related accept
 
-    # ICMP essencial
     ip protocol icmp accept
     meta l4proto ipv6-icmp accept
 
-    # SSH:
-    tcp dport \$PORT_SSH ip saddr @admin_allow accept comment "SSH ADMIN"
-    tcp dport \$PORT_SSH ip saddr @vpn_allow accept comment "SSH VPN"
+    tcp dport \$PORT_SSH ip saddr @admin_allow accept
+    tcp dport \$PORT_SSH ip saddr @vpn_allow accept
 
-$( [ "$PROFILE" = "dev" ] && echo '    # Permite senha SSH no modo DEV' )
-$( [ "$PROFILE" = "prod" ] && echo '    # SSH PRODUCTION — só chave (políticas extras em sshd_config)' )
+$([ "$PROFILE" = "dev" ] && echo '    # DEV: SSH com senha permitido')
+$([ "$PROFILE" = "prod" ] && echo '    # PROD: somente chave SSH')
 
-$( [ "$EXPOSE_HTTP_INBOUND" = "true" ] && echo "    tcp dport \$PORT_HTTP accept comment \"HTTP inbound\"" )
-$( [ "$EXPOSE_HTTPS_INBOUND" = "true" ] && echo "    tcp dport \$PORT_HTTPS accept comment \"HTTPS inbound\"" )
+$([ "$EXPOSE_HTTP_INBOUND" = "true" ] && echo "    tcp dport \$PORT_HTTP accept")
+$([ "$EXPOSE_HTTPS_INBOUND" = "true" ] && echo "    tcp dport \$PORT_HTTPS accept")
   }
 
   chain forward {
@@ -99,31 +111,37 @@ $( [ "$EXPOSE_HTTPS_INBOUND" = "true" ] && echo "    tcp dport \$PORT_HTTPS acce
     oif "lo" accept
     ct state established,related accept
 
-$( [ "$ALLOW_OUTBOUND_DNS" = "true" ] && echo "    udp dport \$PORT_DNS accept
-    tcp dport \$PORT_DNS accept" )
+$([ "$ALLOW_OUTBOUND_DNS" = "true" ] && echo "    udp dport \$PORT_DNS accept
+    tcp dport \$PORT_DNS accept")
 
-$( [ "$ALLOW_OUTBOUND_WEB" = "true" ] && echo "    tcp dport { \$PORT_HTTP, \$PORT_HTTPS } accept" )
+$([ "$ALLOW_OUTBOUND_WEB" = "true" ] && echo "    tcp dport { \$PORT_HTTP, \$PORT_HTTPS } accept")
 
-$( [ "$ALLOW_OUTBOUND_NTP" = "true" ] && echo "    udp dport \$PORT_NTP accept" )
+$([ "$ALLOW_OUTBOUND_NTP" = "true" ] && echo "    udp dport \$PORT_NTP accept")
 
-    tcp dport { \$PORT_WZ_DATA, \$PORT_WZ_CTRL } ip daddr \$WAZUH_MGR accept comment "Wazuh Manager"
-    tcp dport \$PORT_ZBX_SRV ip daddr @zbx_allow accept comment "Zabbix Server"
+    tcp dport { \$PORT_WZ_DATA, \$PORT_WZ_CTRL } ip daddr \$WAZUH_MGR accept
+    tcp dport \$PORT_ZBX_SRV ip daddr @zbx_allow accept
 
-    # ICMP
     ip protocol icmp accept
     meta l4proto ipv6-icmp accept
   }
 }
 EOF
 
-echo "[INFO] Validando sintaxe nft..."
-nft -c -f /etc/nftables.conf || {
-  echo "[ERRO] Sintaxe inválida em nftables.conf"
-  exit 3
-}
+# ===== Validação e aplicação =====
+echo "[INFO] Validando sintaxe..."
+nft -c -f /etc/nftables.conf &&
+  echo "[OK] Sintaxe nft válida" ||
+  {
+    echo "[ERRO] nft inválido!"
+    exit 3
+  }
 
-echo "[INFO] Aplicando firewall..."
+echo "[INFO] Aplicando regras..."
 nft -f /etc/nftables.conf
+
+echo "[INFO] Habilitando nftables..."
 systemctl enable --now nftables
 
-echo "[OK] setup_nft concluído!"
+echo "[OK] setup_nft finalizado com sucesso ✅"
+echo "==============================================="
+exit 0
